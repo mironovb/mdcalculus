@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>Molecular dynamics is calculus</title>
+<meta name="description" content="Atoms are balls, the energy is a landscape, the force is minus the slope, and two Taylor series give the step. A one-page live demo of molecular dynamics for calculus students.">
+<style>
+  /* ---------- Colours: one bright theme ---------- */
+  :root {
+    --bg: #f4f4f0; --panel: #ffffff; --text: #1c1d21; --muted: #5f636c; --line: #dadad4;
+    --accent: #1d5fd1; --accent-text: #ffffff;
+    --curve: #1c1d21; --force: #d92d20; --tangent: #0f9f6e; --highlight: #7c3aed; --odd: #b45309; --box: #c9d2e3; --link: #6f7a90;
+  }
+
+  /* ---------- Page ---------- */
+  * { box-sizing: border-box; }
+  html { font-size: clamp(16px, 0.5vw + 13px, 20px); }
+  body {
+    margin: 0; background: var(--bg); color: var(--text); line-height: 1.4;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 18px; padding: 14px 16px 10px; background: linear-gradient(90deg, #e3ecff, #fff1e4); }
+  h1 { font-size: 1.6rem; margin: 0; letter-spacing: -0.01em; }
+  header p { margin: 0; color: var(--muted); }
+
+  /* Five blocks. Wide screens: two rows that fit one projector screen. */
+  main {
+    display: grid; gap: 10px; padding: 10px 16px 10px;
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    grid-template-areas:
+      "movie movie movie movie movie movie movie pair pair pair pair pair"
+      "newton newton newton verlet verlet verlet verlet verlet verlet clock clock clock";
+  }
+  @media (max-width: 1100px) {
+    main { grid-template-columns: 1fr 1fr; grid-template-areas: "movie movie" "pair verlet" "newton clock"; }
+  }
+  @media (max-width: 700px) {
+    main { grid-template-columns: 1fr; grid-template-areas: "movie" "pair" "newton" "verlet" "clock"; }
+  }
+  .block { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 10px 14px; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+  .movie { grid-area: movie; } .pair { grid-area: pair; } .newton { grid-area: newton; } .verlet { grid-area: verlet; } .clock { grid-area: clock; }
+  .block h2 { font-size: 1.05rem; margin: 0; display: flex; align-items: center; gap: 8px; }
+  .num { flex: none; width: 1.6em; height: 1.6em; border-radius: 50%; background: var(--accent); color: var(--accent-text); text-align: center; line-height: 1.6em; font-size: 0.9em; }
+  .block p { margin: 0; }
+  .muted { color: var(--muted); }
+
+  .plotbox { position: relative; width: 100%; border-radius: 10px; overflow: hidden; background: var(--bg); border: 1px solid var(--line); }
+  .plotbox canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: pan-y; }
+  /* The movie is sized by height so the whole page fits one screen; the text and controls sit beside it. */
+  .movie .body { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
+  .plotbox.sim { flex: 0 1 auto; height: min(40vh, 22vw); aspect-ratio: 5 / 3; width: auto; max-width: 100%; }
+  .movie .side { flex: 1 1 180px; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+  .movie .side > * { flex: none; }
+  .plotbox.pairplot { aspect-ratio: 16 / 10; max-height: 32vh; }
+  @media (max-width: 700px) {
+    .plotbox.sim { height: auto; width: 100%; }
+  }
+
+  .controls { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; }
+  .btn { font: inherit; font-weight: 600; padding: 0 14px; min-height: 40px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--text); cursor: pointer; }
+  .btn.primary { background: var(--accent); color: var(--accent-text); border-color: transparent; min-width: 6.5em; }
+  .btn:focus-visible, input:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .switch { display: flex; align-items: center; gap: 8px; min-height: 40px; cursor: pointer; position: relative; }
+  .switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+  .track { flex: none; width: 42px; height: 24px; border-radius: 12px; background: var(--line); position: relative; transition: background 0.15s; }
+  .track::after { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.35); transition: transform 0.15s; }
+  .switch input:checked + .track { background: var(--accent); }
+  .switch input:checked + .track::after { transform: translateX(18px); }
+  .switch input:focus-visible + .track { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .slider { display: grid; grid-template-columns: auto auto; column-gap: 10px; align-items: center; flex: 1 1 200px; }
+  .slider output { font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; }
+  .slider input { grid-column: 1 / -1; width: 100%; margin: 0; height: 32px; accent-color: var(--accent); cursor: pointer; }
+  .slider .ends { grid-column: 1 / -1; display: flex; justify-content: space-between; color: var(--muted); font-size: 0.8em; margin-top: -4px; }
+  .counter { color: var(--muted); }
+  .counter b { color: var(--text); font-variant-numeric: tabular-nums; }
+
+  .formula { font-size: 1.3em; text-align: center; margin: 2px 0; }
+  .formula.boxed { border: 2px solid var(--accent); border-radius: 10px; padding: 6px 12px; width: max-content; max-width: 100%; margin: 4px auto; overflow-wrap: anywhere; }
+  .taylor { display: grid; grid-template-columns: max-content 1fr; column-gap: 10px; row-gap: 4px; font-size: 1.02em; }
+  .taylor .lhs { text-align: right; }
+  .taylor .sum { border-top: 2px solid var(--line); padding-top: 4px; }
+  @media (max-width: 700px) {
+    .taylor { grid-template-columns: 1fr; row-gap: 2px; }
+    .taylor .lhs { text-align: left; margin-top: 6px; }
+    .taylor .rhs { padding-left: 1.5em; }
+    .taylor .rhs.sum { border-top: none; padding-top: 0; }
+  }
+  .odd { color: var(--odd); text-decoration: line-through; text-decoration-thickness: 2px; }
+  .live { background: var(--bg); border-radius: 10px; padding: 8px 12px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+  .live b { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .facts { display: grid; gap: 6px; }
+  .fact { display: flex; justify-content: space-between; gap: 10px; background: var(--bg); border-radius: 10px; padding: 6px 10px; }
+  .fact b { white-space: nowrap; }
+  footer { padding: 4px 16px 22px; color: var(--muted); font-size: 0.85rem; }
+  footer a { color: var(--accent); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Molecular dynamics is calculus</h1>
+  <p>The main tool of computational chemistry, in five blocks.</p>
+</header>
+
+<main>
+
+  <!-- 1 · the movie -->
+  <section class="block movie">
+    <h2><span class="num">1</span>Atoms are balls</h2>
+    <div class="body">
+      <div class="plotbox sim"><canvas id="sim" aria-label="Simulation of 40 atoms bouncing in a box"></canvas></div>
+      <div class="side">
+        <p>Each atom is a ball with a position x(t). The outlined one feeds block 4.</p>
+        <div class="controls">
+          <button class="btn primary" id="play">&#10074;&#10074; Pause</button>
+          <button class="btn" id="reset">Reset</button>
+        </div>
+        <label class="switch"><input type="checkbox" id="forces" checked><span class="track"></span><span>Force arrows</span></label>
+        <label class="slider"><span>Temperature</span><output id="Tout"></output><input type="range" id="T" min="0.05" max="2" step="0.05" value="0.6" aria-label="Temperature"><span class="ends"><span>cold</span><span>hot</span></span></label>
+        <label class="slider"><span>Speed</span><output id="Sout"></output><input type="range" id="S" min="1" max="15" step="1" value="6" aria-label="Speed"><span class="ends"><span>slow motion</span><span>fast</span></span></label>
+        <p class="counter">step <b id="steps">0</b> &middot; one frame of the movie per step</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2 · the landscape -->
+  <section class="block pair">
+    <h2><span class="num">2</span>The energy is a landscape</h2>
+    <p>Hills and valleys: two atoms attract when apart and push back when squeezed. Move the pointer over the plot.</p>
+    <div class="plotbox pairplot"><canvas id="pair" aria-label="Energy of two atoms against their distance"></canvas></div>
+    <p><b>F = &minus;dU/dx:</b> minus the slope, so atoms roll downhill.</p>
+  </section>
+
+  <!-- 3 · Newton -->
+  <section class="block newton">
+    <h2><span class="num">3</span>Newton makes it a differential equation</h2>
+    <div class="formula">m&middot;x&Prime; = &minus;dU/dx</div>
+    <p>Acceleration is the second derivative of position, so F = ma is a differential equation for every atom at once.</p>
+    <p class="muted">Nobody can solve it by hand for thousands of atoms, so the computer takes tiny steps in time.</p>
+  </section>
+
+  <!-- 4 · Verlet -->
+  <section class="block verlet">
+    <h2><span class="num">4</span>Two Taylor series give the step</h2>
+    <p>Expand x(t + dt) and x(t &minus; dt), then add: the odd terms cancel and the error is of order dt<sup>4</sup>.</p>
+    <div class="taylor">
+      <span class="lhs">x(t + dt) =</span><span class="rhs">x(t) <span class="odd">+ v&middot;dt</span> + &frac12;a&middot;dt<sup>2</sup> <span class="odd">+ &#8537;b&middot;dt<sup>3</sup></span> + &hellip;</span>
+      <span class="lhs">x(t &minus; dt) =</span><span class="rhs">x(t) <span class="odd">&minus; v&middot;dt</span> + &frac12;a&middot;dt<sup>2</sup> <span class="odd">&minus; &#8537;b&middot;dt<sup>3</sup></span> + &hellip;</span>
+      <span class="lhs sum">x(t + dt) + x(t &minus; dt) =</span><span class="rhs sum">2x(t) + a&middot;dt<sup>2</sup> + &hellip;</span>
+    </div>
+    <div class="formula boxed">x(t + dt) = 2x(t) &minus; x(t &minus; dt) + a(t)&middot;dt<sup>2</sup></div>
+    <p>Position now, position one step ago and the force give the next position. Nearly every molecular dynamics code uses this line. Live, for the outlined atom:</p>
+    <div class="live">
+      x(t &minus; dt) = <b id="xprev"></b> &nbsp; x(t) = <b id="xnow"></b> &nbsp; a&middot;dt<sup>2</sup> = <b id="adt2"></b><br>
+      x(t + dt) = 2(<b id="p1"></b>) &minus; (<b id="p2"></b>) + (<b id="p3"></b>) = <b id="xnext"></b>
+    </div>
+  </section>
+
+  <!-- 5 · the clock -->
+  <section class="block clock">
+    <h2><span class="num">5</span>The result is a movie</h2>
+    <p>One frame per step, and the step must be tiny, because the fastest bonds vibrate every 10 fs or so.</p>
+    <div class="facts">
+      <div class="fact"><span>one step</span><b>1 fs = 10<sup>&minus;15</sup> s</b></div>
+      <div class="fact"><span>one bond vibration</span><b>&asymp; 10 fs</b></div>
+      <div class="fact"><span>one nanosecond</span><b>10<sup>6</sup> steps</b></div>
+    </div>
+    <p class="counter">Movie so far: <b id="movietime">0 fs</b>, <b id="movienano">0 %</b> of a nanosecond. At this pace a nanosecond takes <b id="pace">&hellip;</b>.</p>
+  </section>
+
+</main>
+
+<footer>Model: 40 Lennard-Jones atoms in reduced units, advanced with the Verlet step above. <a href="advanced/">Advanced version</a>: one atom on an energy curve, with a thermostat and metadynamics.</footer>
+
+<script>
+(() => {
+'use strict';
+
+/* =====================================================================
+   PART 1 · PHYSICS (no DOM). Reduced units: m = 1, kB = 1, and the
+   Lennard-Jones size and energy are both 1.
+   ===================================================================== */
+// --- physics begin ---
+const N = 40, BOX_W = 16, BOX_H = 9.6;  // number of atoms and box size (5:3)
+const DT = 0.005;                        // time step
+const R_ATOM = 0.5;                      // drawing radius; wall reflection keeps centres this far from the edges
+const RCUT = 2.5, RCUT2 = RCUT * RCUT;   // interaction cut-off
+const U_CUT = 4 * (Math.pow(RCUT, -12) - Math.pow(RCUT, -6));            // U at the cut-off
+const F_CUT = 24 * (2 * Math.pow(RCUT, -13) - Math.pow(RCUT, -7));        // −dU/dr at the cut-off
+const SMOOTH = 0.05;   // weight of each step in the running average of the force (used only for the arrows)
+
+// Pair energy U(r) and its derivative dU/dr.
+function pairU(r) { const i6 = Math.pow(r, -6); return 4 * (i6 * i6 - i6); }
+function pairDU(r) { const i6 = Math.pow(r, -6); return 4 * (-12 * i6 * i6 + 6 * i6) / r; }
+
+let spare = null;
+function gauss() {
+  if (spare !== null) { const g = spare; spare = null; return g; }
+  let u, v, r;
+  do { u = 2 * Math.random() - 1; v = 2 * Math.random() - 1; r = u * u + v * v; } while (r >= 1 || r === 0);
+  const f = Math.sqrt(-2 * Math.log(r) / r);
+  spare = v * f;
+  return u * f;
+}
+
+function makeSystem(T) {
+  const arr = () => new Float64Array(N);
+  const s = { x: arr(), y: arr(), vx: arr(), vy: arr(), ax: arr(), ay: arr(), xPrev: arr(), yPrev: arr(),
+              fxs: arr(), fys: arr(), steps: 0, pe: 0 };
+  resetSystem(s, T);
+  return s;
+}
+// Atoms start on a small lattice in the middle of the box with random velocities.
+function resetSystem(s, T) {
+  const cols = 8, rows = 5, spacing = 1.25;
+  const x0 = BOX_W / 2 - (cols - 1) * spacing / 2, y0 = BOX_H / 2 - (rows - 1) * spacing / 2;
+  let mx = 0, my = 0;
+  for (let i = 0; i < N; i++) {
+    s.x[i] = x0 + (i % cols) * spacing + 0.05 * gauss();
+    s.y[i] = y0 + Math.floor(i / cols) * spacing + 0.05 * gauss();
+    s.vx[i] = Math.sqrt(T) * gauss(); s.vy[i] = Math.sqrt(T) * gauss();
+    mx += s.vx[i]; my += s.vy[i];
+  }
+  for (let i = 0; i < N; i++) { s.vx[i] -= mx / N; s.vy[i] -= my / N; }   // no overall drift
+  computeForces(s);
+  s.fxs.set(s.ax); s.fys.set(s.ay);
+  // A previous position consistent with the velocity, so the Verlet line matches from step one.
+  for (let i = 0; i < N; i++) {
+    s.xPrev[i] = s.x[i] - s.vx[i] * DT + 0.5 * s.ax[i] * DT * DT;
+    s.yPrev[i] = s.y[i] - s.vy[i] * DT + 0.5 * s.ay[i] * DT * DT;
+  }
+  s.steps = 0;
+}
+// Sum the Lennard-Jones forces over all pairs (m = 1, so acceleration = force).
+// The force is shifted so it reaches zero smoothly at the cut-off distance.
+function computeForces(s) {
+  s.ax.fill(0); s.ay.fill(0);
+  let pe = 0;
+  for (let i = 0; i < N; i++) {
+    for (let j = i + 1; j < N; j++) {
+      const dx = s.x[i] - s.x[j], dy = s.y[i] - s.y[j], r2 = dx * dx + dy * dy;
+      if (r2 >= RCUT2) continue;
+      const inv2 = 1 / r2, inv6 = inv2 * inv2 * inv2, r = Math.sqrt(r2);
+      const f = 24 * (2 * inv6 * inv6 - inv6) * inv2 - F_CUT / r;   // force divided by r
+      s.ax[i] += f * dx; s.ay[i] += f * dy;
+      s.ax[j] -= f * dx; s.ay[j] -= f * dy;
+      pe += 4 * (inv6 * inv6 - inv6) - U_CUT + (r - RCUT) * F_CUT;
+    }
+  }
+  s.pe = pe;
+}
+function kinetic(s) { let k = 0; for (let i = 0; i < N; i++) k += 0.5 * (s.vx[i] * s.vx[i] + s.vy[i] * s.vy[i]); return k; }
+
+/**
+ * One velocity-Verlet step (same positions as x(t+dt) = 2x(t) − x(t−dt) + a·dt²),
+ * elastic walls, and a gentle velocity rescaling that nudges the temperature
+ * toward Ttarget (strength 0 turns it off).
+ */
+function stepSystem(s, Ttarget, strength) {
+  for (let i = 0; i < N; i++) {
+    s.xPrev[i] = s.x[i]; s.yPrev[i] = s.y[i];
+    s.vx[i] += 0.5 * DT * s.ax[i]; s.vy[i] += 0.5 * DT * s.ay[i];
+    s.x[i] += DT * s.vx[i]; s.y[i] += DT * s.vy[i];
+    // Bounce off the walls (mirror the previous position too, so the Verlet line stays true).
+    if (s.x[i] < R_ATOM) { s.x[i] = 2 * R_ATOM - s.x[i]; s.xPrev[i] = 2 * R_ATOM - s.xPrev[i]; s.vx[i] = -s.vx[i]; }
+    else if (s.x[i] > BOX_W - R_ATOM) { s.x[i] = 2 * (BOX_W - R_ATOM) - s.x[i]; s.xPrev[i] = 2 * (BOX_W - R_ATOM) - s.xPrev[i]; s.vx[i] = -s.vx[i]; }
+    if (s.y[i] < R_ATOM) { s.y[i] = 2 * R_ATOM - s.y[i]; s.yPrev[i] = 2 * R_ATOM - s.yPrev[i]; s.vy[i] = -s.vy[i]; }
+    else if (s.y[i] > BOX_H - R_ATOM) { s.y[i] = 2 * (BOX_H - R_ATOM) - s.y[i]; s.yPrev[i] = 2 * (BOX_H - R_ATOM) - s.yPrev[i]; s.vy[i] = -s.vy[i]; }
+  }
+  computeForces(s);
+  for (let i = 0; i < N; i++) {
+    s.vx[i] += 0.5 * DT * s.ax[i]; s.vy[i] += 0.5 * DT * s.ay[i];
+    s.fxs[i] += (s.ax[i] - s.fxs[i]) * SMOOTH;   // running average of the force, for calm arrows
+    s.fys[i] += (s.ay[i] - s.fys[i]) * SMOOTH;
+  }
+  if (strength > 0) {
+    const Tnow = kinetic(s) / N;   // two dimensions: KE = N·kB·T
+    if (Tnow > 1e-9) {
+      const lam = Math.min(1.05, Math.max(0.95, Math.sqrt(1 + strength * (Ttarget / Tnow - 1))));
+      for (let i = 0; i < N; i++) { s.vx[i] *= lam; s.vy[i] *= lam; }
+    }
+  }
+  s.steps += 1;
+}
+// --- physics end ---
+
+/* =====================================================================
+   PART 2 · PAGE
+   ===================================================================== */
+const $ = id => document.getElementById(id);
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+const fnum = (v, d = 4) => { const s = Math.abs(v).toFixed(d); return (v < 0 && Number(s) !== 0 ? '−' : '') + s; };
+
+const THEME_KEYS = ['bg', 'panel', 'text', 'muted', 'line', 'accent', 'curve', 'force', 'tangent', 'highlight', 'box', 'link'];
+const theme = {};
+function readTheme() { const cs = getComputedStyle(document.documentElement); for (const k of THEME_KEYS) theme[k] = cs.getPropertyValue('--' + k).trim(); }
+readTheme();
+
+function fitCanvas(canvas) {
+  const rect = canvas.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+  const w = Math.max(1, Math.round(rect.width * dpr)), h = Math.max(1, Math.round(rect.height * dpr));
+  if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return { ctx, W: rect.width, H: rect.height };
+}
+const fontOf = px => px + 'px system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+function drawArrow(ctx, x0, y0, x1, y1, color, width) {
+  const ang = Math.atan2(y1 - y0, x1 - x0), head = Math.max(6, 2.6 * width);
+  ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = width; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x1, y1);
+  ctx.lineTo(x1 - head * Math.cos(ang - 0.5), y1 - head * Math.sin(ang - 0.5));
+  ctx.lineTo(x1 - head * Math.cos(ang + 0.5), y1 - head * Math.sin(ang + 0.5));
+  ctx.closePath(); ctx.fill();
+}
+// A shaded ball; hue runs from blue (slow) to orange-red (fast).
+function drawAtom(ctx, px, py, r, hue, outline) {
+  const g = ctx.createRadialGradient(px - 0.35 * r, py - 0.35 * r, 0.1 * r, px, py, r);
+  g.addColorStop(0, 'hsl(' + hue + ', 80%, 80%)');
+  g.addColorStop(1, 'hsl(' + hue + ', 65%, 46%)');
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(px, py, r, 0, 2 * Math.PI); ctx.fill();
+  if (outline) { ctx.strokeStyle = outline; ctx.lineWidth = 3; ctx.stroke(); }
+}
+
+/* ---------- The box of atoms ---------- */
+let speed = 6;                    // steps per frame: at 60 frames per second, 6 means 360 steps per second
+const THERMO_STRENGTH = 0.01;     // how quickly velocities are nudged toward the chosen temperature
+const TRAIL_EVERY = 4, TRAIL_MAX = 40;   // the outlined atom leaves a short trail of past frames
+let T = 0.6;
+const sys = makeSystem(T);
+const trail = [];
+let playing = true, showForces = true, acc = 0;
+
+function runSteps(n) {
+  for (let i = 0; i < n; i++) {
+    stepSystem(sys, T, THERMO_STRENGTH);
+    if (sys.steps % TRAIL_EVERY === 0) { trail.push({ x: sys.x[0], y: sys.y[0] }); if (trail.length > TRAIL_MAX) trail.shift(); }
+  }
+}
+$('T').addEventListener('input', () => { T = Number($('T').value); $('Tout').textContent = T.toFixed(2); });
+$('Tout').textContent = T.toFixed(2);
+$('S').addEventListener('input', () => { speed = Number($('S').value); $('Sout').textContent = speed + ' steps/frame'; });
+$('Sout').textContent = speed + ' steps/frame';
+$('forces').addEventListener('change', () => { showForces = $('forces').checked; });
+$('play').addEventListener('click', () => { playing = !playing; acc = 0; $('play').innerHTML = playing ? '&#10074;&#10074; Pause' : '&#9654; Play'; });
+$('reset').addEventListener('click', () => { resetSystem(sys, T); trail.length = 0; });
+
+function drawSim() {
+  const { ctx, W, H } = fitCanvas($('sim'));
+  const scale = Math.min(W / BOX_W, H / BOX_H);
+  const ox = (W - BOX_W * scale) / 2, oy = (H - BOX_H * scale) / 2;
+  const X = i => ox + sys.x[i] * scale, Y = i => oy + sys.y[i] * scale;
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = theme.panel; ctx.fillRect(ox, oy, BOX_W * scale, BOX_H * scale);
+  ctx.strokeStyle = theme.box; ctx.lineWidth = 3; ctx.strokeRect(ox, oy, BOX_W * scale, BOX_H * scale);
+
+  // Faint links between atoms that are touching: the structure of the liquid.
+  ctx.strokeStyle = theme.link; ctx.lineWidth = 1.5;
+  for (let i = 0; i < N; i++) {
+    for (let j = i + 1; j < N; j++) {
+      const dx = sys.x[i] - sys.x[j], dy = sys.y[i] - sys.y[j], r2 = dx * dx + dy * dy;
+      if (r2 > 1.96) continue;
+      ctx.globalAlpha = 0.7 * clamp((1.4 - Math.sqrt(r2)) / 0.4, 0, 1);
+      ctx.beginPath(); ctx.moveTo(X(i), Y(i)); ctx.lineTo(X(j), Y(j)); ctx.stroke();
+    }
+  }
+  ctx.globalAlpha = 1;
+
+  // Trail of the outlined atom: the frames it has already been through.
+  ctx.fillStyle = theme.highlight;
+  trail.forEach((p, k) => {
+    ctx.globalAlpha = 0.08 + 0.5 * k / TRAIL_MAX;
+    ctx.beginPath(); ctx.arc(ox + p.x * scale, oy + p.y * scale, 0.11 * scale, 0, 2 * Math.PI); ctx.fill();
+  });
+  ctx.globalAlpha = 1;
+
+  const vScale = 1 / Math.sqrt(2 * Math.max(T, 0.3)) / 1.6;   // speed → colour
+  for (let i = 0; i < N; i++) {
+    const speed = Math.hypot(sys.vx[i], sys.vy[i]);
+    drawAtom(ctx, X(i), Y(i), R_ATOM * scale, 215 - 200 * clamp(speed * vScale, 0, 1), i === 0 ? theme.highlight : null);
+  }
+
+  // Force arrows: the running average of the force, with a length that grows
+  // with |F| but saturates so a hard collision does not swing a huge arrow.
+  if (showForces) {
+    for (let i = 0; i < N; i++) {
+      const fx = sys.fxs[i], fy = sys.fys[i], f = Math.hypot(fx, fy);
+      if (f < 0.12) continue;
+      const len = 1.5 * scale * (1 - Math.exp(-f / 6));
+      ctx.globalAlpha = clamp((f - 0.12) / 0.6, 0, 1) * (0.5 + 0.5 * Math.min(1, f / 6));   // fade in, never pop
+      drawArrow(ctx, X(i), Y(i), X(i) + fx / f * len, Y(i) + fy / f * len, theme.panel, 5.5);   // light halo
+      drawArrow(ctx, X(i), Y(i), X(i) + fx / f * len, Y(i) + fy / f * len, theme.force, 2.5);
+    }
+    ctx.globalAlpha = 1;
+  }
+  const legend = 'T = ' + T.toFixed(2) + '   colour = speed' + (showForces ? '   red arrow = force' : ''), lfs = clamp(W / 44, 12, 18);
+  ctx.font = fontOf(lfs);
+  ctx.fillStyle = theme.panel; ctx.globalAlpha = 0.8; ctx.fillRect(ox + 4, oy + 4, ctx.measureText(legend).width + 10, 1.5 * lfs); ctx.globalAlpha = 1;
+  ctx.fillStyle = theme.muted; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+  ctx.fillText(legend, ox + 9, oy + 6);
+}
+
+function updateNumbers() {
+  const x = sys.x[0], xp = sys.xPrev[0], adt2 = sys.ax[0] * DT * DT;
+  $('xprev').textContent = fnum(xp); $('xnow').textContent = fnum(x); $('adt2').textContent = fnum(adt2, 6);
+  $('p1').textContent = fnum(x); $('p2').textContent = fnum(xp); $('p3').textContent = fnum(adt2, 6);
+  $('xnext').textContent = fnum(2 * x - xp + adt2);
+  $('steps').textContent = sys.steps.toLocaleString('en-US');
+  const fs = sys.steps;   // one femtosecond per step
+  $('movietime').textContent = fs < 1000 ? fs + ' fs' : (fs < 1e6 ? (fs / 1000).toFixed(1) + ' ps' : (fs / 1e6).toFixed(3) + ' ns');
+  $('movienano').textContent = (100 * fs / 1e6).toFixed(4) + ' %';
+}
+
+/* ---------- Two atoms and their energy landscape ---------- */
+const pairCanvas = $('pair');
+let pointerR = null, pointerAge = Infinity;
+{
+  const setFromPointer = e => {
+    const rect = pairCanvas.getBoundingClientRect();
+    pointerR = (e.clientX - rect.left) / rect.width; pointerAge = 0;   // stored as a fraction, mapped in drawPair
+  };
+  pairCanvas.addEventListener('pointermove', setFromPointer);
+  pairCanvas.addEventListener('pointerdown', setFromPointer);
+}
+const RMIN = 0.88, RMAX = 2.6, UMIN = -1.4, UMAX = 1.8;
+function drawPair(now) {
+  const { ctx, W, H } = fitCanvas(pairCanvas);
+  const fs = clamp(W / 38, 12, 18);
+  const strip = 3.2 * fs;                                  // room at the bottom for the two atoms
+  const L = 1.2 * fs, R = W - 0.8 * fs, Tp = 3.1 * fs, B = H - strip - 1.2 * fs;
+  const px = r => L + (r - RMIN) / (RMAX - RMIN) * (R - L);
+  const py = u => B - (u - UMIN) / (UMAX - UMIN) * (B - Tp);
+  // The ball sweeps slowly by itself and follows the pointer for a few seconds after a touch.
+  let r;
+  if (pointerR !== null && pointerAge < 4000) r = clamp(RMIN + pointerR * (RMAX - RMIN), 0.95, RMAX - 0.02);
+  else r = 1.55 + 0.55 * Math.sin(now / 1600);
+  const u = pairU(r), du = pairDU(r), F = -du;
+
+  ctx.clearRect(0, 0, W, H);
+  ctx.font = fontOf(fs);
+  // axis line at U = 0
+  ctx.strokeStyle = theme.line; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(L, py(0)); ctx.lineTo(R, py(0)); ctx.stroke();
+  ctx.fillStyle = theme.muted; ctx.textAlign = 'right'; ctx.textBaseline = 'bottom';
+  ctx.fillText('distance r →', R, py(0) - 3);
+  ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.fillText('energy U(r) of two atoms', L + 4, Tp - 2.9 * fs);
+  // curve, tangent, force arrow
+  ctx.save(); ctx.beginPath(); ctx.rect(L, Tp, R - L, B - Tp); ctx.clip();
+  ctx.strokeStyle = theme.curve; ctx.lineWidth = 2.5; ctx.beginPath();
+  for (let i = 0; i <= 300; i++) { const rr = RMIN + (RMAX - RMIN) * i / 300, q = py(pairU(rr)); i ? ctx.lineTo(px(rr), q) : ctx.moveTo(px(rr), q); }
+  ctx.stroke();
+  ctx.strokeStyle = theme.tangent; ctx.lineWidth = 2; ctx.beginPath();
+  ctx.moveTo(px(r - 0.25), py(u - du * 0.25)); ctx.lineTo(px(r + 0.25), py(u + du * 0.25)); ctx.stroke();
+  const bx = px(r), by = py(u), len = Math.min(0.3 * (R - L), Math.abs(F) * 0.06 * (R - L));
+  if (len > 3) drawArrow(ctx, bx, by, bx + Math.sign(F) * len, by, theme.force, 3);
+  ctx.restore();
+  ctx.fillStyle = theme.force; ctx.beginPath(); ctx.arc(bx, by, 0.45 * fs, 0, 2 * Math.PI); ctx.fill();
+  const verdict = F > 0.02 ? 'pushes apart' : F < -0.02 ? 'pulls together' : 'balanced: the bond length';
+  ctx.fillStyle = theme.tangent; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+  ctx.fillText('slope dU/dr = ' + fnum(du, 2) + '   F = ' + fnum(F, 2) + '   ' + verdict, L + 4, Tp - 1.5 * fs);
+  // the two atoms at the same distance r, with their forces
+  const cy = H - strip / 2, rad = 0.85 * fs, sep = r * 2.1 * rad, cx = W / 2;   // r = 1 means the atoms just touch
+  ctx.strokeStyle = theme.line; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(cx - sep / 2, cy - 1.6 * rad); ctx.lineTo(cx + sep / 2, cy - 1.6 * rad); ctx.stroke();
+  ctx.fillStyle = theme.muted; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; ctx.fillText('r', cx, cy - 1.7 * rad);
+  for (const sgn of [-1, 1]) {
+    const ax = cx + sgn * sep / 2;
+    drawAtom(ctx, ax, cy, rad, 200, null);
+    const flen = Math.min(3 * rad, Math.abs(F) * 1.2 * rad);
+    if (flen > 3) drawArrow(ctx, ax, cy, ax + sgn * Math.sign(F) * flen, cy, theme.force, 3);
+  }
+}
+
+/* ---------- Animation loop ---------- */
+let last = performance.now(), paceSteps = 0, paceStart = performance.now();
+function frame(now) {
+  const elapsed = Math.min(100, now - last);
+  last = now; pointerAge += elapsed;
+  if (playing) {
+    acc += speed * elapsed * 60 / 1000;
+    const n = Math.min(300, Math.floor(acc));
+    acc -= n;
+    runSteps(n);
+    paceSteps += n;
+  }
+  // Measured pace: how long a nanosecond (a million steps) would take at this rate.
+  if (now - paceStart > 2000) {
+    const perSec = paceSteps / ((now - paceStart) / 1000);
+    if (perSec > 0) {
+      const sec = 1e6 / perSec;
+      $('pace').textContent = sec < 90 ? Math.round(sec) + ' seconds' : sec < 5400 ? Math.round(sec / 60) + ' minutes' : (sec / 3600).toFixed(1) + ' hours';
+    } else $('pace').textContent = '… (press Play)';
+    paceSteps = 0; paceStart = now;
+  }
+  drawSim();
+  drawPair(now);
+  updateNumbers();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

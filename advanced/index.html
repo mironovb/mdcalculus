@@ -1,0 +1,1143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Molecular dynamics is calculus</title>
+<style>
+  /* ---------- Colours: light theme first, dark theme follows the system setting ---------- */
+  :root {
+    --bg: #f4f4f1; --panel: #ffffff; --text: #1c1d21; --muted: #5f636c; --line: #d6d7d2; --grid: #e8e8e3;
+    --accent: #1d5fd1; --accent-text: #ffffff;
+    --curve: #1c1d21; --ball: #e2472f; --ke: #d97706; --pe: #2563eb; --tot: #15803d;
+    --sand: #e3b25f; --bias: #b45309; --ghost: #7c3aed; --tangent: #0f9f6e; --force: #dc2626; --taylor: #9333ea;
+    --warn-bg: #fff4c2; --warn-text: #6b4f00;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #121317; --panel: #1c1e24; --text: #eceef2; --muted: #a3a7b1; --line: #34373f; --grid: #262930;
+      --accent: #6da3ff; --accent-text: #0b1020;
+      --curve: #eceef2; --ball: #ff6b4a; --ke: #fbbf24; --pe: #60a5fa; --tot: #4ade80;
+      --sand: #d9a441; --bias: #f59e0b; --ghost: #c4b5fd; --tangent: #34d399; --force: #f87171; --taylor: #c084fc;
+      --warn-bg: #3b3200; --warn-text: #ffe58a;
+    }
+  }
+
+  /* ---------- Page skeleton ---------- */
+  * { box-sizing: border-box; }
+  html { font-size: clamp(16px, 0.55vw + 13px, 21px); }
+  body {
+    margin: 0; background: var(--bg); color: var(--text); line-height: 1.4;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  header { padding: 14px 16px 0; }
+  h1 { font-size: 1.55rem; margin: 0 0 10px; letter-spacing: -0.01em; }
+  .tabs { display: flex; gap: 6px; border-bottom: 2px solid var(--line); }
+  .tab {
+    font: inherit; font-weight: 600; background: none; border: none; border-bottom: 4px solid transparent;
+    margin-bottom: -2px; padding: 8px 12px; color: var(--muted); cursor: pointer; min-height: 44px;
+  }
+  .tab[aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); }
+  .tab:focus-visible { outline: 3px solid var(--accent); outline-offset: -3px; border-radius: 6px; }
+  main { padding: 14px 16px 8px; }
+  footer { padding: 12px 16px 28px; color: var(--muted); font-size: 0.85rem; }
+  [hidden] { display: none !important; }
+
+  /* Canvas above the controls on a phone, side by side on a wide screen. */
+  .screen { display: none; }
+  .screen.active { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  @media (min-width: 1000px) {
+    .screen.active { grid-template-columns: minmax(0, 3fr) minmax(380px, 2fr); align-items: start; }
+    .stage { position: sticky; top: 8px; }
+  }
+  .stage { display: grid; gap: 10px; min-width: 0; }
+  .plotbox { position: relative; width: 100%; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .plotbox canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: pan-y; }
+  .plotbox.main   { aspect-ratio: 16 / 10; max-height: 56vh; }
+  .plotbox.energy { aspect-ratio: 16 / 5;  max-height: 24vh; }
+  .plotbox.top    { aspect-ratio: 16 / 9;  max-height: 50vh; }
+  .plotbox.bottom { aspect-ratio: 16 / 6;  max-height: 30vh; }
+  .caption { color: var(--muted); font-size: 0.9rem; margin: -4px 2px 0; }
+  .warn { background: var(--warn-bg); color: var(--warn-text); border-radius: 10px; padding: 10px 14px; }
+
+  /* ---------- Controls ---------- */
+  .panel { display: grid; gap: 14px; min-width: 0; }
+  .panel > * { min-width: 0; }
+  .transport { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .btn {
+    font: inherit; font-weight: 600; padding: 0 16px; min-height: 44px; border-radius: 10px;
+    border: 1px solid var(--line); background: var(--panel); color: var(--text); cursor: pointer;
+  }
+  .btn.primary { background: var(--accent); color: var(--accent-text); border-color: transparent; min-width: 7.5em; }
+  .btn:focus-visible, input[type="range"]:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .box { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+  .box h2 { font-size: 0.85rem; margin: 0 0 8px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
+  .toggles { display: grid; }
+  .switch { display: flex; align-items: center; gap: 12px; min-height: 44px; cursor: pointer; position: relative; }
+  .switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+  .track { flex: none; width: 46px; height: 26px; border-radius: 13px; background: var(--line); position: relative; transition: background 0.15s; }
+  .track::after {
+    content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%;
+    background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35); transition: transform 0.15s;
+  }
+  .switch input:checked + .track { background: var(--accent); }
+  .switch input:checked + .track::after { transform: translateX(20px); }
+  .switch input:focus-visible + .track { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .sliders { display: grid; gap: 4px; }
+  .slider { display: grid; grid-template-columns: 1fr auto; align-items: center; column-gap: 12px; }
+  .slider output { font-variant-numeric: tabular-nums; font-weight: 700; text-align: right; white-space: nowrap; }
+  .slider input { grid-column: 1 / -1; width: 100%; margin: 0; height: 36px; accent-color: var(--accent); cursor: pointer; }
+  .seg { display: flex; flex-wrap: wrap; gap: 8px; border: none; padding: 0; margin: 0; }
+  .seg legend { padding: 0; margin-bottom: 6px; color: var(--muted); font-weight: 700; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em; }
+  .seg label { position: relative; flex: 1 1 150px; cursor: pointer; }
+  .seg input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+  .segbtn { display: block; padding: 8px 10px; min-height: 44px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); text-align: center; }
+  .segbtn small { display: block; color: var(--muted); font-size: 0.8em; }
+  .seg input:checked + .segbtn { border-color: var(--accent); box-shadow: inset 0 0 0 2px var(--accent); }
+  .seg input:focus-visible + .segbtn { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+  /* ---------- Numbers and text ---------- */
+  .numbers { font-variant-numeric: tabular-nums; }
+  .kvs { display: flex; flex-wrap: wrap; gap: 2px 18px; }
+  .kv b, .numeq, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .numeq { font-size: 0.95em; margin: 2px 0; overflow-wrap: anywhere; }
+  .numeq.cont { padding-left: 4ch; }
+  .numhead { font-weight: 700; margin: 8px 0 4px; }
+  .hint { color: var(--muted); font-size: 0.9rem; margin-top: 4px; }
+  .formula { font-size: 1.05em; }
+  details.calc summary { cursor: pointer; font-weight: 700; min-height: 44px; display: flex; align-items: center; }
+  details.calc ul { padding-left: 20px; margin: 4px 0 0; }
+  details.calc li { margin: 8px 0; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Molecular dynamics is calculus</h1>
+  <div class="tabs" role="tablist" aria-label="Screens">
+    <button class="tab" role="tab" id="tab-md" aria-selected="true" aria-controls="screen-md" data-screen="md">1. Molecular dynamics</button>
+    <button class="tab" role="tab" id="tab-mt" aria-selected="false" aria-controls="screen-mt" data-screen="mt" tabindex="-1">2. Metadynamics</button>
+  </div>
+</header>
+
+<main>
+
+<!-- ======================= SCREEN 1: MOLECULAR DYNAMICS ======================= -->
+<section class="screen active" id="screen-md" role="tabpanel" aria-labelledby="tab-md">
+  <div class="stage">
+    <div class="plotbox main"><canvas id="md-main" aria-label="Potential energy curve U(x) with the atom drawn as a ball"></canvas></div>
+    <div class="caption">Drag the ball to choose where it starts. The ball is the atom; the curve is its potential energy U(x).</div>
+    <div class="plotbox energy"><canvas id="md-energy" aria-label="Kinetic, potential and total energy against time"></canvas></div>
+    <div class="warn" id="md-warn" hidden></div>
+  </div>
+
+  <div class="panel">
+    <div class="transport">
+      <button class="btn primary" id="md-play">&#9654; Play</button>
+      <button class="btn" id="md-step">Step once</button>
+      <button class="btn" id="md-reset">Reset</button>
+    </div>
+    <label class="slider" id="md-speed"><span>Speed</span><output></output><input type="range" aria-label="Speed"></label>
+
+    <fieldset class="seg" id="md-pot">
+      <legend>Potential energy U(x)</legend>
+      <label><input type="radio" name="md-pot" value="double" checked><span class="segbtn">Double well<small>h(x<sup>2</sup> &minus; 1)<sup>2</sup></small></span></label>
+      <label><input type="radio" name="md-pot" value="harmonic"><span class="segbtn">Harmonic well<small>&frac12;kx<sup>2</sup>, a bond as a spring</small></span></label>
+      <label><input type="radio" name="md-pot" value="morse"><span class="segbtn">Morse bond<small>D(1 &minus; e<sup>&minus;a(x &minus; x<sub>0</sub>)</sup>)<sup>2</sup>, a more realistic bond</small></span></label>
+    </fieldset>
+
+    <div class="box">
+      <h2>Show</h2>
+      <div class="toggles">
+        <label class="switch"><input type="checkbox" id="md-tangent" checked><span class="track"></span><span>Tangent line at the ball, slope dU/dx</span></label>
+        <label class="switch"><input type="checkbox" id="md-force" checked><span class="track"></span><span>Force arrow, F = &minus;dU/dx</span></label>
+        <label class="switch"><input type="checkbox" id="md-ghosts"><span class="track"></span><span>Verlet ghost points x(t &minus; dt) and x(t + dt)</span></label>
+        <label class="switch"><input type="checkbox" id="md-taylor"><span class="track"></span><span>2nd-order Taylor parabola at the nearest minimum</span></label>
+      </div>
+    </div>
+
+    <div class="box">
+      <h2>Simulation</h2>
+      <div class="toggles">
+        <label class="switch"><input type="checkbox" id="md-euler"><span class="track"></span><span>Integrator: forward Euler instead of Verlet</span></label>
+        <label class="switch"><input type="checkbox" id="md-thermo"><span class="track"></span><span>Thermostat (Langevin: friction + random kicks)</span></label>
+      </div>
+      <div class="sliders">
+        <label class="slider" id="md-dt"><span>Time step dt</span><output></output><input type="range" aria-label="Time step"></label>
+        <label class="slider" id="md-h"><span>Barrier height h</span><output></output><input type="range" aria-label="Barrier height"></label>
+        <label class="slider" id="md-T"><span>Temperature T</span><output></output><input type="range" aria-label="Temperature"></label>
+        <label class="slider" id="md-gamma"><span>Friction &gamma;</span><output></output><input type="range" aria-label="Friction"></label>
+      </div>
+    </div>
+
+    <div class="box numbers">
+      <h2>Numbers, updated every step</h2>
+      <div class="kvs">
+        <span class="kv">t = <b id="n-t"></b></span>
+        <span class="kv">v = <b id="n-v"></b></span>
+      </div>
+      <div class="kvs">
+        <span class="kv">KE = &frac12;v<sup>2</sup> = <b id="n-ke"></b></span>
+        <span class="kv">PE = U(x) = <b id="n-pe"></b></span>
+        <span class="kv">E = KE + PE = <b id="n-e"></b></span>
+      </div>
+      <div class="numhead"><span id="n-int">Verlet</span> step with dt = <span class="mono" id="n-dt"></span></div>
+      <div class="kvs">
+        <span class="kv">x(t &minus; dt) = <b id="n-xprev"></b></span>
+        <span class="kv">x(t) = <b id="n-x"></b></span>
+      </div>
+      <div class="kvs">
+        <span class="kv">slope dU/dx at x(t) = <b id="n-slope"></b></span>
+      </div>
+      <div class="kvs">
+        <span class="kv">force F = &minus;dU/dx = <b id="n-f"></b></span>
+        <span class="kv">acceleration a = F/m = <b id="n-a"></b></span>
+      </div>
+      <div id="n-verlet">
+        <div class="numeq">x(t + dt) = 2&middot;x(t) &minus; x(t &minus; dt) + a&middot;dt<sup>2</sup></div>
+        <div class="numeq cont" id="n-plug"></div>
+        <div class="numeq cont">= <b id="n-xnext"></b></div>
+      </div>
+      <div id="n-euler" hidden>
+        <div class="numeq">x(t + dt) = x(t) + v(t)&middot;dt</div>
+        <div class="numeq cont" id="n-eplugx"></div>
+        <div class="numeq cont">= <b id="n-exnext"></b></div>
+        <div class="numeq">v(t + dt) = v(t) + a&middot;dt</div>
+        <div class="numeq cont" id="n-eplugv"></div>
+        <div class="numeq cont">= <b id="n-evnext"></b></div>
+        <div class="hint">Euler only uses the slope at the start of the step, so it overshoots a little every step and the total energy creeps up.</div>
+      </div>
+      <div class="hint" id="n-thermo" hidden>Thermostat on: friction and random kicks are added on top of this step, so the next x will differ slightly.</div>
+    </div>
+
+    <div class="box" id="md-cross" hidden>
+      <h2>Barrier crossings</h2>
+      <div class="kvs">
+        <span class="kv">crossings: <b id="c-count">0</b></span>
+        <span class="kv">in <b id="c-time">0</b> time units</span>
+        <span class="kv">rate: <b id="c-rate">&mdash;</b> per unit time</span>
+      </div>
+      <div class="kvs">
+        <span class="kv">e<sup>&minus;h/T</sup> = e<sup>&minus;<span id="c-h"></span>/<span id="c-T"></span></sup> = <b id="c-exp"></b></span>
+      </div>
+      <div class="hint">Arrhenius idea: the barrier sits in the exponent, so a slightly higher hill means far fewer crossings. Raising h by 1 at T = 1 divides the rate by e &asymp; 2.7.</div>
+      <div class="hint" id="c-rare" hidden>Crossings are now very rare (roughly one every <b id="c-wait"></b> time units). Tab 2, Metadynamics, shows the fix.</div>
+    </div>
+
+    <details class="calc box">
+      <summary>Where is the calculus?</summary>
+      <ul>
+        <li><b>The force is a derivative.</b> F = &minus;dU/dx: minus the slope of the energy curve. Steep curve, strong push, and always downhill.</li>
+        <li><b>Newton's law is a differential equation.</b> Acceleration is the second derivative of position, so F = ma reads m&middot;x&Prime; = &minus;dU/dx. For real molecules it cannot be solved by hand, so the computer takes tiny steps in time.</li>
+        <li><b>The Verlet step is two Taylor series.</b> Expand x(t + dt) and x(t &minus; dt) around t and add them: the odd terms (dt, dt<sup>3</sup>) cancel, leaving x(t + dt) = 2x(t) &minus; x(t &minus; dt) + a(t)&middot;dt<sup>2</sup> with an error of order dt<sup>4</sup>.</li>
+        <li><b>Near a minimum every curve is a parabola.</b> At a minimum U&prime;(x<sub>0</sub>) = 0, so the Taylor series starts with &frac12;U&Prime;(x<sub>0</sub>)(x &minus; x<sub>0</sub>)<sup>2</sup>. That is Hooke's law: a chemical bond near its rest length behaves like a spring.</li>
+        <li><b>Rare events follow an exponential.</b> The crossing rate is proportional to e<sup>&minus;h/T</sup>, the Arrhenius equation. The barrier sits in the exponent, so a little more barrier means a lot fewer crossings.</li>
+      </ul>
+    </details>
+  </div>
+</section>
+
+<!-- ======================= SCREEN 2: METADYNAMICS ======================= -->
+<section class="screen" id="screen-mt" role="tabpanel" aria-labelledby="tab-mt">
+  <div class="stage">
+    <div class="plotbox top"><canvas id="mt-top" aria-label="Double well with the accumulated bias drawn as sand filling the valley"></canvas></div>
+    <div class="caption">Every N steps a small Gaussian hill lands where the ball is. The valley fills like sand until the ball can climb out.</div>
+    <div class="plotbox bottom"><canvas id="mt-bottom" aria-label="Estimated free energy from the bias compared with the true curve"></canvas></div>
+  </div>
+
+  <div class="panel">
+    <div class="transport">
+      <button class="btn primary" id="mt-play">&#9654; Play</button>
+      <button class="btn" id="mt-step">Step once</button>
+      <button class="btn" id="mt-reset">Reset</button>
+    </div>
+    <label class="slider" id="mt-speed"><span>Speed</span><output></output><input type="range" aria-label="Speed"></label>
+
+    <div class="box numbers">
+      <div class="formula">V(x) = &Sigma; w&middot;exp(&minus;(x &minus; x<sub>i</sub>)<sup>2</sup> / (2&sigma;<sup>2</sup>))</div>
+      <div class="kvs">
+        <span class="kv">hills so far: <b id="mt-nhills">0</b></span>
+        <span class="kv">crossings: <b id="mt-cross">0</b></span>
+      </div>
+      <div class="kvs">
+        <span class="kv">estimated barrier: <b id="mt-est">&mdash;</b></span>
+        <span class="kv">true barrier h: <b id="mt-true"></b></span>
+      </div>
+      <div class="hint" id="mt-wtnote" hidden>Well-tempered: each new hill has height w&middot;exp(&minus;V(x<sub>now</sub>) / ((B &minus; 1)&middot;T)) and the estimate is &minus;(B/(B &minus; 1))&middot;V(x).</div>
+    </div>
+
+    <div class="box">
+      <h2>Hills</h2>
+      <div class="sliders">
+        <label class="slider" id="mt-w"><span>Hill height w</span><output></output><input type="range" aria-label="Hill height"></label>
+        <label class="slider" id="mt-sigma"><span>Hill width &sigma;</span><output></output><input type="range" aria-label="Hill width"></label>
+        <label class="slider" id="mt-N"><span>Drop a hill every N steps</span><output></output><input type="range" aria-label="Deposition interval"></label>
+      </div>
+      <div class="toggles">
+        <label class="switch"><input type="checkbox" id="mt-showhills"><span class="track"></span><span>Draw the individual Gaussians</span></label>
+        <label class="switch"><input type="checkbox" id="mt-wt"><span class="track"></span><span>Well-tempered metadynamics</span></label>
+      </div>
+      <div class="sliders">
+        <label class="slider" id="mt-B" hidden><span>Bias factor B</span><output></output><input type="range" aria-label="Bias factor"></label>
+      </div>
+    </div>
+
+    <div class="box">
+      <h2>Landscape</h2>
+      <div class="sliders">
+        <label class="slider" id="mt-T"><span>Temperature T</span><output></output><input type="range" aria-label="Temperature"></label>
+        <label class="slider" id="mt-h"><span>Barrier height h</span><output></output><input type="range" aria-label="Barrier height"></label>
+      </div>
+      <div class="hint">Thermostat always on, friction &gamma; = 1, dt = 0.01. Changing h or the well-tempered switch starts a fresh run.</div>
+    </div>
+
+    <details class="calc box">
+      <summary>Where is the calculus?</summary>
+      <ul>
+        <li><b>A sum of Gaussians rebuilds the curve.</b> Each hill is w&middot;exp(&minus;(x &minus; x<sub>i</sub>)<sup>2</sup>/(2&sigma;<sup>2</sup>)). Their sum V(x) fills the valley the atom is stuck in, and once the run is long enough &minus;V(x) is a copy of U(x).</li>
+        <li><b>The extra push is a derivative.</b> The atom feels F = &minus;dU/dx &minus; dV/dx, and dV/dx is the sum of the derivatives of the Gaussians, one term at a time.</li>
+        <li><b>Why the trick is needed.</b> Without hills the crossing rate is proportional to e<sup>&minus;h/T</sup>, the Arrhenius equation, so at low T the atom would wait practically forever. Filling the valley lowers the barrier, and the waiting time shrinks exponentially.</li>
+        <li><b>Same force, same law.</b> The atom still obeys m&middot;x&Prime; = F and still moves by the Verlet step; only the energy curve it rolls on has changed.</li>
+      </ul>
+    </details>
+  </div>
+</section>
+
+</main>
+
+<!-- ===== Footer: one line, easy to edit ===== -->
+<footer>Reduced units: m = 1, k<sub>B</sub> = 1. One particle on a one-dimensional energy curve, moved by the Verlet step.</footer>
+
+<script>
+(() => {
+'use strict';
+
+/* =====================================================================
+   PART 1 · PHYSICS (pure functions, no DOM)
+   Reduced units: mass m = 1 and Boltzmann constant kB = 1, so the
+   acceleration equals the force and the temperature is an energy.
+   ===================================================================== */
+// --- physics begin ---
+
+// Plotted range of x. Beyond |x| = XWALL a steep quartic wall
+// U_wall = KWALL·(|x| − XWALL)^4 keeps the atom on screen.
+const XMIN = -1.8, XMAX = 1.8, XWALL = 1.5, KWALL = 1000;
+
+function wallU(x)  { const d = Math.abs(x) - XWALL; return d > 0 ? KWALL * d * d * d * d : 0; }
+function wallDU(x) { const d = Math.abs(x) - XWALL; return d > 0 ? 4 * KWALL * d * d * d * Math.sign(x) : 0; }
+
+// Fixed parameters of the two "bond" potentials.
+const K_HARM = 10;                        // spring constant k of the harmonic well
+const MORSE = { D: 5, a: 1.3, x0: -0.6 }; // depth, steepness and rest length of the Morse bond
+
+// Each potential gives U, its first and second derivative, the nearest
+// minimum (for the Taylor parabola) and a starting position for the atom.
+// The barrier height h is only used by the double well.
+const POTENTIALS = {
+  double: {
+    formula: 'U(x) = h(x² − 1)²',
+    note: '',
+    U:   (x, h) => h * (x * x - 1) * (x * x - 1),
+    dU:  (x, h) => 4 * h * x * (x * x - 1),
+    d2U: (x, h) => 4 * h * (3 * x * x - 1),
+    nearestMin: x => (x < 0 ? -1 : 1),
+    start: -1.35,
+  },
+  harmonic: {
+    formula: 'U(x) = ½kx²',
+    note: 'k = 10',
+    U:   x => 0.5 * K_HARM * x * x,
+    dU:  x => K_HARM * x,
+    d2U: () => K_HARM,
+    nearestMin: () => 0,
+    start: -1.0,
+  },
+  morse: {
+    formula: 'U(x) = D(1 − e^(−a(x − x₀)))²',
+    note: 'D = 5, a = 1.3, x₀ = −0.6',
+    U:   x => { const e = 1 - Math.exp(-MORSE.a * (x - MORSE.x0)); return MORSE.D * e * e; },
+    dU:  x => { const y = Math.exp(-MORSE.a * (x - MORSE.x0)); return 2 * MORSE.D * MORSE.a * y * (1 - y); },
+    d2U: x => { const y = Math.exp(-MORSE.a * (x - MORSE.x0)); return 2 * MORSE.D * MORSE.a * MORSE.a * y * (2 * y - 1); },
+    nearestMin: () => MORSE.x0,
+    start: -1.1,
+  },
+};
+
+// Potential energy and its slope, walls included.
+function energy(pot, h, x) { return pot.U(x, h) + wallU(x); }
+function slope(pot, h, x)  { return pot.dU(x, h) + wallDU(x); }
+
+// Standard normal random numbers (Marsaglia polar method) for the thermostat kicks.
+let spareGauss = null;
+function gauss() {
+  if (spareGauss !== null) { const g = spareGauss; spareGauss = null; return g; }
+  let u, v, r;
+  do { u = 2 * Math.random() - 1; v = 2 * Math.random() - 1; r = u * u + v * v; } while (r >= 1 || r === 0);
+  const f = Math.sqrt(-2 * Math.log(r) / r);
+  spareGauss = v * f;
+  return u * f;
+}
+
+/**
+ * Advance one state {x, v, xPrev, t, steps} by one time step.
+ * accel(x) returns the acceleration (equal to the force, since m = 1).
+ * o = { dt, euler, thermo, gamma, T }.
+ *
+ * Default integrator: velocity Verlet. With the thermostat on, the friction
+ * and random kick ("O" step) sit in the middle of the step: B-A-O-A-B, the
+ * BAOAB scheme of Leimkuhler and Matthews. With the thermostat off the O step
+ * does nothing and the scheme is exactly velocity Verlet, whose positions
+ * satisfy x(t+dt) = 2x(t) − x(t−dt) + a(t)·dt².
+ */
+function stepState(s, accel, o) {
+  const dt = o.dt;
+  s.xPrev = s.x;
+  if (o.euler) {
+    // Forward Euler: use the velocity and acceleration from the start of the step only.
+    const a = accel(s.x);
+    s.x += dt * s.v;
+    s.v += dt * a;
+    if (o.thermo) thermostatKick(s, o);
+  } else {
+    s.v += 0.5 * dt * accel(s.x);       // B: half kick
+    s.x += 0.5 * dt * s.v;              // A: half drift
+    if (o.thermo) thermostatKick(s, o); // O: friction and random kick
+    s.x += 0.5 * dt * s.v;              // A: half drift
+    s.v += 0.5 * dt * accel(s.x);       // B: half kick
+  }
+  s.t += dt;
+  s.steps += 1;
+}
+
+// Exact solution of dv = −γ·v·dt + √(2γT)·dW over one step (Ornstein–Uhlenbeck).
+function thermostatKick(s, o) {
+  const c1 = Math.exp(-o.gamma * o.dt);
+  s.v = c1 * s.v + Math.sqrt((1 - c1 * c1) * o.T) * gauss();
+}
+
+// Put the atom at rest at x. The "previous" position is chosen so that the
+// position-Verlet formula reproduces the first velocity-Verlet step exactly:
+// the atom is at a turning point, so x(t−dt) = x(t+dt).
+function placeAtRest(s, x, accel, dt) {
+  s.x = x; s.v = 0; s.xPrev = x + 0.5 * accel(x) * dt * dt;
+}
+
+// Barrier crossings: count only full trips from x < −0.5 to x > 0.5 or back.
+function sideOf(x) { return x < -0.5 ? -1 : (x > 0.5 ? 1 : 0); }
+function makeCrossing(x, t) { return { count: 0, side: sideOf(x), t0: t, lastT: t }; }
+function trackCrossing(c, x, t) {
+  const side = sideOf(x);
+  if (side === 0) return;
+  if (c.side === -side) { c.count += 1; c.lastT = t; }
+  c.side = side;
+}
+
+/* ---------- Screen 1 model: plain molecular dynamics ---------- */
+function makeMD() {
+  const md = { pot: 'double', h: 5, dt: 0.01, T: 1, gamma: 1, thermo: false, euler: false,
+               s: { x: 0, v: 0, xPrev: 0, t: 0, steps: 0 }, cross: null, hist: [] };
+  resetMD(md);
+  return md;
+}
+const mdPot = md => POTENTIALS[md.pot];
+const mdAccel = (md, x) => -slope(mdPot(md), md.h, x);
+function mdPlace(md, x) { placeAtRest(md.s, x, xx => mdAccel(md, xx), md.dt); }
+function resetMD(md) {
+  md.s = { x: 0, v: 0, xPrev: 0, t: 0, steps: 0 };
+  mdPlace(md, mdPot(md).start);
+  md.cross = makeCrossing(md.s.x, 0);
+  md.hist = [];
+}
+// One step. Returns false when the numbers have run away (dt too large).
+function mdStep(md) {
+  stepState(md.s, x => mdAccel(md, x), md);   // md carries dt, euler, thermo, gamma, T
+  const s = md.s;
+  trackCrossing(md.cross, s.x, s.t);
+  return Number.isFinite(s.x) && Number.isFinite(s.v) && Math.abs(s.x) < XMAX + 0.4 && Math.abs(s.v) < 100;
+}
+function mdEnergies(md) {
+  const ke = 0.5 * md.s.v * md.s.v, pe = energy(mdPot(md), md.h, md.s.x);
+  return { ke, pe, e: ke + pe };
+}
+
+/* ---------- Screen 2 model: metadynamics on the double well ---------- */
+// The bias V(x) and its derivative live on a grid; each new Gaussian is
+// added to the grid once instead of being re-summed at every step.
+const GRID_N = 401;
+function makeGrid(n) {
+  const g = { n, dx: (XMAX - XMIN) / (n - 1), x: new Float64Array(n), V: new Float64Array(n), dV: new Float64Array(n) };
+  for (let i = 0; i < n; i++) g.x[i] = XMIN + i * g.dx;
+  return g;
+}
+// Linear interpolation of a grid array at x.
+function gridAt(g, arr, x) {
+  let f = (x - XMIN) / g.dx;
+  if (f <= 0) return arr[0];
+  if (f >= g.n - 1) return arr[g.n - 1];
+  const i = Math.floor(f); f -= i;
+  return arr[i] * (1 - f) + arr[i + 1] * f;
+}
+// Add one Gaussian hill w·exp(−(x − xc)²/(2σ²)) and its derivative to the grid.
+function addHill(g, xc, w, sigma) {
+  const s2 = sigma * sigma;
+  for (let i = 0; i < g.n; i++) {
+    const d = g.x[i] - xc, e = w * Math.exp(-d * d / (2 * s2));
+    g.V[i] += e;
+    g.dV[i] += -d / s2 * e;
+  }
+}
+
+function makeMeta() {
+  const mt = { h: 5, T: 0.5, w: 0.1, sigma: 0.12, N: 50, dt: 0.01, gamma: 1, wt: false, B: 10,
+               thermo: true, euler: false,
+               s: null, grid: makeGrid(GRID_N), est: new Float64Array(GRID_N), hills: [], sinceHill: 0, cross: null };
+  resetMeta(mt);
+  return mt;
+}
+const mtAccel = (mt, x) => -(slope(POTENTIALS.double, mt.h, x) + gridAt(mt.grid, mt.grid.dV, x));
+function resetMeta(mt) {
+  mt.grid.V.fill(0); mt.grid.dV.fill(0);
+  mt.hills = []; mt.sinceHill = 0;
+  mt.s = { x: -1, v: 0, xPrev: -1, t: 0, steps: 0 };
+  mt.cross = makeCrossing(-1, 0);
+}
+function metaStep(mt) {
+  stepState(mt.s, x => mtAccel(mt, x), mt);
+  trackCrossing(mt.cross, mt.s.x, mt.s.t);
+  if (++mt.sinceHill >= mt.N) { mt.sinceHill = 0; dropHill(mt); }
+}
+// Drop a hill at the atom's current position. With well-tempered
+// metadynamics the hill shrinks where the bias is already high.
+function dropHill(mt) {
+  const xc = mt.s.x, Vhere = gridAt(mt.grid, mt.grid.V, xc);
+  const w = mt.wt ? mt.w * Math.exp(-Vhere / ((mt.B - 1) * mt.T)) : mt.w;
+  addHill(mt.grid, xc, w, mt.sigma);
+  mt.hills.push({ x: xc, w, sigma: mt.sigma, base: energy(POTENTIALS.double, mt.h, xc) + Vhere });
+}
+// Free-energy estimate from the bias: −V(x), or −(B/(B−1))·V(x) when
+// well-tempered, shifted so that its minimum inside the walls is zero.
+// The estimated barrier is the value of that curve at x = 0.
+function metaEstimate(mt) {
+  const g = mt.grid, fac = mt.wt ? mt.B / (mt.B - 1) : 1;
+  let maxV = 0;
+  for (let i = 0; i < g.n; i++) if (Math.abs(g.x[i]) <= XWALL && g.V[i] > maxV) maxV = g.V[i];
+  for (let i = 0; i < g.n; i++) mt.est[i] = fac * (maxV - g.V[i]);
+  return { est: mt.est, barrier: mt.est[Math.round(-XMIN / g.dx)] };
+}
+
+// --- physics end ---
+
+/* =====================================================================
+   PART 2 · USER INTERFACE
+   ===================================================================== */
+const $ = id => document.getElementById(id);
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+const MINUS = '−';
+
+// Number formatting with a real minus sign.
+function fnum(v, d = 4) {
+  if (!Number.isFinite(v)) return '—';
+  const s = Math.abs(v).toFixed(d);
+  return (v < 0 && Number(s) !== 0 ? MINUS : '') + s;
+}
+const SUPS = { '-': '⁻', '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴', '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹' };
+// Small positive numbers in scientific notation, e.g. 4.5×10⁻⁵.
+function fsci(v) {
+  if (!(v > 0)) return '0';
+  if (v >= 1e-3) return v.toFixed(4);
+  const e = Math.floor(Math.log10(v));
+  return (v / Math.pow(10, e)).toFixed(1) + '×10' + String(e).split('').map(c => SUPS[c]).join('');
+}
+
+/* ---------- Theme colours are read from the CSS variables ---------- */
+const THEME_KEYS = ['bg', 'panel', 'text', 'muted', 'line', 'grid', 'accent', 'curve', 'ball', 'ke', 'pe', 'tot',
+                    'sand', 'bias', 'ghost', 'tangent', 'force', 'taylor'];
+const theme = {};
+function readTheme() {
+  const cs = getComputedStyle(document.documentElement);
+  for (const k of THEME_KEYS) theme[k] = cs.getPropertyValue('--' + k).trim();
+}
+readTheme();
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', readTheme);
+
+/* ---------- Canvas helpers ---------- */
+// Match the canvas bitmap to its CSS size times devicePixelRatio.
+function fitCanvas(canvas) {
+  const rect = canvas.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+  const w = Math.max(1, Math.round(rect.width * dpr)), h = Math.max(1, Math.round(rect.height * dpr));
+  if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return { ctx, W: rect.width, H: rect.height };
+}
+const fontSize = W => clamp(W / 40, 12, 22);
+const fontOf = px => px + 'px system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+
+// Data-to-pixel mapping for a plot area with the given margins.
+function makeMap(W, H, xmin, xmax, ymin, ymax, pad) {
+  const L = pad.l, R = W - pad.r, T = pad.t, B = H - pad.b;
+  return {
+    L, R, T, B, W: R - L, H: B - T, xmin, xmax, ymin, ymax,
+    px: x => L + (x - xmin) / (xmax - xmin) * (R - L),
+    py: y => B - (y - ymin) / (ymax - ymin) * (B - T),
+    x:  p => xmin + (p - L) / (R - L) * (xmax - xmin),
+  };
+}
+// Standard margins around a U(x) plot: room for a title line above and tick labels below.
+const plotPad = fs => ({ l: 1.3 * fs, r: 0.6 * fs, t: 2.4 * fs, b: 1.9 * fs });
+function clipPlot(ctx, m) { ctx.beginPath(); ctx.rect(m.L, m.T, m.W, m.H); ctx.clip(); }
+function tracePath(ctx, m, fn, x0, x1, n) {
+  ctx.beginPath();
+  for (let i = 0; i <= n; i++) {
+    const x = x0 + (x1 - x0) * i / n, px = m.px(x), py = m.py(fn(x));
+    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  }
+}
+function drawArrow(ctx, x0, y0, x1, y1, color, width) {
+  const ang = Math.atan2(y1 - y0, x1 - x0), head = Math.max(8, 3 * width);
+  ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = width; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x1 - head * Math.cos(ang - 0.45), y1 - head * Math.sin(ang - 0.45));
+  ctx.lineTo(x1 - head * Math.cos(ang + 0.45), y1 - head * Math.sin(ang + 0.45));
+  ctx.closePath(); ctx.fill();
+}
+// Text with a translucent backing so it stays readable on top of the curves.
+// When bounds {L, R} are given the text is shifted to stay inside them.
+function drawLabel(ctx, text, x, y, color, align = 'left', bounds = null) {
+  const w = ctx.measureText(text).width, fs = parseFloat(ctx.font);
+  let x0 = align === 'left' ? x : (align === 'right' ? x - w : x - w / 2);
+  if (bounds) x0 = clamp(x0, bounds.L + 3, Math.max(bounds.L + 3, bounds.R - w - 3));
+  if (bounds && bounds.T !== undefined) y = clamp(y, bounds.T + 0.7 * fs, bounds.B - 0.7 * fs);
+  ctx.fillStyle = theme.panel; ctx.globalAlpha = 0.82;
+  ctx.fillRect(x0 - 3, y - fs * 0.62, w + 6, fs * 1.25);
+  ctx.globalAlpha = 1; ctx.fillStyle = color; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillText(text, x0, y);
+}
+// Horizontal axis at U = 0 with ticks at x = −1, 0, 1, plus a vertical "energy" label.
+function drawXAxis(ctx, m, fs) {
+  const y0 = m.py(0);
+  ctx.strokeStyle = theme.line; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(m.L, y0); ctx.lineTo(m.R, y0); ctx.stroke();
+  ctx.fillStyle = theme.muted; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  for (const xt of [-1, 0, 1]) {
+    const px = m.px(xt);
+    ctx.strokeStyle = theme.grid; ctx.beginPath(); ctx.moveTo(px, m.T); ctx.lineTo(px, m.B); ctx.stroke();
+    ctx.fillText(xt === 0 ? '0' : (xt < 0 ? MINUS + '1' : '1'), px, m.B + 4);
+  }
+  ctx.textAlign = 'right'; ctx.fillText('position x', m.R, m.B + 4);
+  ctx.save();
+  ctx.translate(m.L - 0.55 * fs, (m.T + m.B) / 2); ctx.rotate(-Math.PI / 2);
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('energy', 0, 0);
+  ctx.restore();
+}
+function drawBall(ctx, px, py, r) {
+  ctx.fillStyle = theme.ball;
+  ctx.beginPath(); ctx.arc(px, py, r, 0, 2 * Math.PI); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.45)';
+  ctx.beginPath(); ctx.arc(px - r * 0.3, py - r * 0.3, r * 0.35, 0, 2 * Math.PI); ctx.fill();
+}
+
+/* ---------- Control helpers: sliders that show their value, switches ---------- */
+// spec = { min, max, step, value, log, fmt, onInput }. A log slider spreads
+// its 1000 positions evenly in log(value), handy for dt and friction.
+function bindSlider(id, spec) {
+  const root = $(id), input = root.querySelector('input'), out = root.querySelector('output');
+  const RES = 1000;
+  let value = spec.value;
+  if (spec.log) { input.min = 0; input.max = RES; input.step = 1; }
+  else { input.min = spec.min; input.max = spec.max; input.step = spec.step; }
+  const show = () => { out.textContent = spec.fmt(value); };
+  const api = {
+    get value() { return value; },
+    set(v) {
+      value = v;
+      input.value = spec.log ? Math.round(Math.log(v / spec.min) / Math.log(spec.max / spec.min) * RES) : v;
+      show();
+    },
+  };
+  input.addEventListener('input', () => {
+    const p = Number(input.value);
+    value = spec.log ? spec.min * Math.pow(spec.max / spec.min, p / RES) : p;
+    show();
+    spec.onInput(value);
+  });
+  api.set(spec.value);
+  return api;
+}
+function bindSwitch(id, checked, onChange) {
+  const input = $(id);
+  input.checked = checked;
+  input.addEventListener('change', () => onChange(input.checked));
+  return input;
+}
+
+/* =====================================================================
+   SCREEN 1 · MOLECULAR DYNAMICS
+   ===================================================================== */
+const md = makeMD();
+md.playing = false; md.speed = 10; md.blown = false; md.dragging = false; md.map = null; md.acc = 0;
+md.show = { tangent: true, force: true, ghosts: false, taylor: false };
+
+const HIST_MAX = 480;   // number of energy samples kept for the energy plot
+function mdSample() {
+  const e = mdEnergies(md);
+  md.hist.push({ t: md.s.t, ke: e.ke, pe: e.pe, e: e.e });
+  if (md.hist.length > HIST_MAX) md.hist.shift();
+}
+// Run n steps; on blow-up stop, put the ball back and show the warning.
+function mdRun(n) {
+  for (let i = 0; i < n; i++) {
+    if (!mdStep(md)) { mdBlowUp(); return; }
+  }
+  if (n > 0) mdSample();
+}
+function mdBlowUp() {
+  const which = md.euler ? 'Forward Euler with dt = ' + md.dt.toPrecision(2) + ' let the energy grow until the numbers ran away.'
+                         : 'dt = ' + md.dt.toPrecision(2) + ' is too large for these forces, so the numbers ran away.';
+  resetMD(md);
+  md.blown = true;
+  mdSetPlaying(false);
+  $('md-warn').textContent = 'The simulation blew up. ' + which + ' The ball has been put back: lower dt and press Play.';
+  $('md-warn').hidden = false;
+}
+function mdClearWarning() { md.blown = false; $('md-warn').hidden = true; }
+function mdSetPlaying(on) {
+  md.playing = on; md.acc = 0;
+  $('md-play').innerHTML = on ? '&#10074;&#10074; Pause' : '&#9654; Play';
+}
+function mdResetCounter() { md.cross = makeCrossing(md.s.x, md.s.t); }
+
+bindSlider('md-speed', { min: 1, max: 100, step: 1, value: 10, fmt: v => v + ' steps/frame', onInput: v => { md.speed = v; } });
+bindSlider('md-dt', { min: 0.001, max: 0.5, log: true, value: 0.01, fmt: v => v.toPrecision(2), onInput: v => {
+  md.dt = v; mdClearWarning();
+  // Keep x(t−dt) consistent with the new step so the displayed formula still matches.
+  md.s.xPrev = md.s.x - md.s.v * v + 0.5 * mdAccel(md, md.s.x) * v * v;
+  mdResetCounter();
+}});
+bindSlider('md-h', { min: 0.5, max: 10, step: 0.1, value: 5, fmt: v => v.toFixed(1), onInput: v => { md.h = v; mdResetCounter(); } });
+bindSlider('md-T', { min: 0.1, max: 3, step: 0.05, value: 1, fmt: v => v.toFixed(2), onInput: v => { md.T = v; mdResetCounter(); } });
+bindSlider('md-gamma', { min: 0.05, max: 20, log: true, value: 1, fmt: v => v.toPrecision(2), onInput: v => { md.gamma = v; mdResetCounter(); } });
+
+bindSwitch('md-tangent', true,  v => { md.show.tangent = v; });
+bindSwitch('md-force',   true,  v => { md.show.force = v; });
+bindSwitch('md-ghosts',  false, v => { md.show.ghosts = v; });
+bindSwitch('md-taylor',  false, v => { md.show.taylor = v; });
+bindSwitch('md-euler',   false, v => { md.euler = v; mdClearWarning(); });
+bindSwitch('md-thermo',  false, v => { md.thermo = v; mdResetCounter(); mdUpdateVisibility(); });
+
+for (const r of document.querySelectorAll('input[name="md-pot"]')) {
+  r.addEventListener('change', () => {
+    if (!r.checked) return;
+    md.pot = r.value;
+    resetMD(md); mdClearWarning(); mdUpdateVisibility();
+  });
+}
+function mdUpdateVisibility() {
+  const dw = md.pot === 'double';
+  $('md-h').hidden = !dw;
+  $('md-cross').hidden = !(dw && md.thermo);
+}
+
+$('md-play').addEventListener('click', () => { if (md.blown) mdClearWarning(); mdSetPlaying(!md.playing); });
+$('md-step').addEventListener('click', () => { if (md.blown) mdClearWarning(); mdSetPlaying(false); mdRun(1); });
+$('md-reset').addEventListener('click', () => { resetMD(md); mdClearWarning(); mdSetPlaying(false); });
+
+// Dragging the ball along the curve sets its starting position (velocity zero).
+{
+  const canvas = $('md-main');
+  const pointerPos = e => { const r = canvas.getBoundingClientRect(); return { px: e.clientX - r.left, py: e.clientY - r.top }; };
+  const nearBall = p => {
+    if (!md.map) return false;
+    const bx = md.map.px(md.s.x), by = md.map.py(energy(mdPot(md), md.h, md.s.x));
+    return Math.hypot(p.px - bx, p.py - by) < Math.max(28, 2.2 * md.map.fs);
+  };
+  const moveBall = p => {
+    mdPlace(md, clamp(md.map.x(p.px), XMIN + 0.02, XMAX - 0.02));
+    md.hist = []; mdResetCounter();
+  };
+  canvas.addEventListener('pointerdown', e => {
+    const p = pointerPos(e);
+    if (!nearBall(p)) return;
+    md.dragging = true; mdClearWarning();
+    canvas.setPointerCapture(e.pointerId);
+    e.preventDefault();
+    moveBall(p);
+  });
+  canvas.addEventListener('pointermove', e => {
+    const p = pointerPos(e);
+    if (md.dragging) moveBall(p);
+    else canvas.style.cursor = nearBall(p) ? 'grab' : 'default';
+  });
+  const release = () => { md.dragging = false; };
+  canvas.addEventListener('pointerup', release);
+  canvas.addEventListener('pointercancel', release);
+  canvas.addEventListener('lostpointercapture', release);
+}
+
+/* ---------- Screen 1 drawing ---------- */
+function drawMDMain() {
+  const { ctx, W, H } = fitCanvas($('md-main'));
+  const pot = mdPot(md), h = md.h, s = md.s, fs = fontSize(W);
+  const hRef = md.pot === 'double' ? h : 5;
+  const yTop = Math.max(2.5 * hRef, 4 * md.T + 2);
+  const m = makeMap(W, H, XMIN, XMAX, -0.1 * yTop, yTop, plotPad(fs));
+  m.fs = fs;
+  md.map = m;
+  const page = { L: 0, R: W };
+  const U = x => energy(pot, h, x);
+  const bx = m.px(s.x), by = m.py(U(s.x)), r = 0.6 * fs;
+
+  ctx.clearRect(0, 0, W, H);
+  ctx.font = fontOf(fs);
+  drawXAxis(ctx, m, fs);
+
+  ctx.save();
+  clipPlot(ctx, m);
+
+  // Barrier height marker for the double well.
+  if (md.pot === 'double') {
+    ctx.strokeStyle = theme.muted; ctx.lineWidth = 1; ctx.setLineDash([4, 4]);
+    ctx.beginPath(); ctx.moveTo(m.px(0), m.py(0)); ctx.lineTo(m.px(0), m.py(h)); ctx.stroke();
+    ctx.setLineDash([]);
+    drawLabel(ctx, 'h = ' + h.toFixed(1), m.px(0) + 6, m.py(h / 2), theme.muted, 'left', m);
+  }
+
+  // Taylor parabola at the nearest minimum.
+  if (md.show.taylor) {
+    const x0 = pot.nearestMin(s.x), k = pot.d2U(x0, h), u0 = pot.U(x0, h);
+    ctx.strokeStyle = theme.taylor; ctx.lineWidth = 2; ctx.setLineDash([7, 5]);
+    tracePath(ctx, m, x => u0 + 0.5 * k * (x - x0) * (x - x0), x0 - 1.2, x0 + 1.2, 120);
+    ctx.stroke(); ctx.setLineDash([]);
+    drawLabel(ctx, 'Taylor at x₀ = ' + fnum(x0, 1) + ':  U(x₀) + ½U″(x₀)(x − x₀)²', m.px(x0), m.T + 0.9 * fs, theme.taylor, 'center', m);
+    drawLabel(ctx, 'U″(x₀) = ' + fnum(k, 1) + ', the spring constant', m.px(x0), m.T + 2.2 * fs, theme.taylor, 'center', m);
+  }
+
+  // The potential energy curve.
+  ctx.strokeStyle = theme.curve; ctx.lineWidth = 2.5; ctx.lineJoin = 'round';
+  tracePath(ctx, m, U, XMIN, XMAX, 360);
+  ctx.stroke();
+
+  const dUdx = slope(pot, h, s.x), F = -dUdx;
+
+  // Tangent line at the ball, labelled with its slope.
+  if (md.show.tangent) {
+    const half = 0.35;
+    ctx.strokeStyle = theme.tangent; ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(m.px(s.x - half), m.py(U(s.x) - dUdx * half));
+    ctx.lineTo(m.px(s.x + half), m.py(U(s.x) + dUdx * half));
+    ctx.stroke();
+    const side = dUdx < 0 ? -1 : 1;   // put the label on the uphill side
+    drawLabel(ctx, 'slope dU/dx = ' + fnum(dUdx, 2), bx + side * 1.3 * fs, by - 1.6 * fs, theme.tangent, side < 0 ? 'right' : 'left', m);
+  }
+
+  // Force arrow, pointing downhill, length proportional to |F|.
+  if (md.show.force) {
+    const len = clamp(Math.abs(F) / (4 * hRef) * 0.25 * m.W, 0, 0.45 * m.W), dir = F < 0 ? -1 : 1;
+    if (len > 2) drawArrow(ctx, bx, by, bx + dir * len, by, theme.force, 3);
+    drawLabel(ctx, 'F = −dU/dx = ' + fnum(F, 2), bx + dir * (len + 0.7 * fs), by, theme.force, dir > 0 ? 'left' : 'right', m);
+  }
+
+  // Verlet ghost points: where the ball was and where the formula says it goes next.
+  if (md.show.ghosts) {
+    const xNext = 2 * s.x - s.xPrev + F * md.dt * md.dt;
+    ctx.strokeStyle = theme.ghost; ctx.lineWidth = 2;
+    for (const [xg, name, lift] of [[s.xPrev, 'x(t − dt)', 2.9], [xNext, 'x(t + dt)', 3.9]]) {
+      const gx = m.px(xg), gy = m.py(U(xg));
+      ctx.beginPath(); ctx.arc(gx, gy, r * 0.55, 0, 2 * Math.PI); ctx.stroke();
+      drawLabel(ctx, name, gx, gy - lift * fs, theme.ghost, 'center', m);
+    }
+  }
+  ctx.restore();
+
+  drawBall(ctx, bx, by, r);
+  drawLabel(ctx, pot.formula, m.L, m.T - 1.2 * fs, theme.text, 'left', page);
+  if (pot.note) drawLabel(ctx, pot.note, m.L + 0.4 * fs, m.T + 0.9 * fs, theme.muted, 'left', page);
+  if (md.thermo) drawLabel(ctx, 'T = ' + md.T.toFixed(2) + ', γ = ' + md.gamma.toPrecision(2), m.R, m.T - 1.2 * fs, theme.muted, 'right', page);
+}
+
+function drawMDEnergy() {
+  const { ctx, W, H } = fitCanvas($('md-energy'));
+  const fs = fontSize(W) * 0.9, hist = md.hist;
+  ctx.clearRect(0, 0, W, H);
+  ctx.font = fontOf(fs);
+  let ymax = 0;
+  for (const p of hist) ymax = Math.max(ymax, p.e, p.ke, p.pe);
+  ymax = Math.max(ymax * 1.15, 0.5);
+  const t0 = hist.length ? hist[0].t : 0, t1 = hist.length > 1 ? hist[hist.length - 1].t : t0 + 1;
+  const m = makeMap(W, H, t0, t1, 0, ymax, { l: 3.4 * fs, r: 0.8 * fs, t: 1.6 * fs, b: 1.5 * fs });
+
+  // Axes and a couple of y ticks.
+  ctx.strokeStyle = theme.line; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(m.L, m.T); ctx.lineTo(m.L, m.B); ctx.lineTo(m.R, m.B); ctx.stroke();
+  ctx.fillStyle = theme.muted; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+  const step = niceStep(ymax / 2.5);
+  for (let y = 0; y <= ymax; y += step) {
+    ctx.strokeStyle = theme.grid; ctx.beginPath(); ctx.moveTo(m.L, m.py(y)); ctx.lineTo(m.R, m.py(y)); ctx.stroke();
+    ctx.fillText(fnum(y, step < 1 ? 1 : 0), m.L - 4, m.py(y));
+  }
+  ctx.textBaseline = 'top'; ctx.textAlign = 'left'; ctx.fillText('t = ' + t0.toFixed(1), m.L, m.B + 3);
+  ctx.textAlign = 'right'; ctx.fillText('t = ' + t1.toFixed(1), m.R, m.B + 3);
+
+  // Legend.
+  ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+  let lx = m.L;
+  for (const [name, color] of [['kinetic ½v²', theme.ke], ['potential U(x)', theme.pe], ['total E', theme.tot]]) {
+    ctx.fillStyle = color; ctx.fillRect(lx, m.T - 1.1 * fs, fs * 1.2, 3);
+    ctx.fillText(name, lx + 1.5 * fs, m.T - 1.1 * fs + 1);
+    lx += 1.5 * fs + ctx.measureText(name).width + 1.4 * fs;
+  }
+  if (hist.length < 2) {
+    ctx.fillStyle = theme.muted; ctx.textAlign = 'center';
+    ctx.fillText('Press Play or Step once to record the energies', (m.L + m.R) / 2, (m.T + m.B) / 2);
+    return;
+  }
+  ctx.save(); clipPlot(ctx, m);
+  for (const [key, color, width] of [['ke', theme.ke, 2], ['pe', theme.pe, 2], ['e', theme.tot, 3]]) {
+    ctx.strokeStyle = color; ctx.lineWidth = width; ctx.lineJoin = 'round';
+    ctx.beginPath();
+    hist.forEach((p, i) => { const x = m.px(p.t), y = m.py(p[key]); if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); });
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+// A "nice" tick spacing (1, 2 or 5 times a power of ten) for a given rough spacing.
+function niceStep(rough) {
+  const p = Math.pow(10, Math.floor(Math.log10(rough))), f = rough / p;
+  return (f < 1.5 ? 1 : f < 3.5 ? 2 : f < 7.5 ? 5 : 10) * p;
+}
+
+function mdUpdateNumbers() {
+  const s = md.s, pot = mdPot(md), dUdx = slope(pot, md.h, s.x), F = -dUdx, a = F, dt = md.dt, dts = dt.toPrecision(2);
+  const en = mdEnergies(md);
+  $('n-t').textContent = s.t.toFixed(2);
+  $('n-v').textContent = fnum(s.v);
+  $('n-ke').textContent = fnum(en.ke); $('n-pe').textContent = fnum(en.pe); $('n-e').textContent = fnum(en.e);
+  $('n-int').textContent = md.euler ? 'Forward Euler' : 'Verlet';
+  $('n-dt').textContent = dts;
+  $('n-xprev').textContent = fnum(s.xPrev); $('n-x').textContent = fnum(s.x);
+  $('n-slope').textContent = fnum(dUdx); $('n-f').textContent = fnum(F); $('n-a').textContent = fnum(a);
+  $('n-verlet').hidden = md.euler; $('n-euler').hidden = !md.euler;
+  if (md.euler) {
+    $('n-eplugx').textContent = '= (' + fnum(s.x) + ') + (' + fnum(s.v) + ')(' + dts + ')';
+    $('n-exnext').textContent = fnum(s.x + s.v * dt);
+    $('n-eplugv').textContent = '= (' + fnum(s.v) + ') + (' + fnum(a) + ')(' + dts + ')';
+    $('n-evnext').textContent = fnum(s.v + a * dt);
+  } else {
+    $('n-plug').textContent = '= 2(' + fnum(s.x) + ') − (' + fnum(s.xPrev) + ') + (' + fnum(a) + ')(' + dts + ')²';
+    $('n-xnext').textContent = fnum(2 * s.x - s.xPrev + a * dt * dt);
+  }
+  $('n-thermo').hidden = !md.thermo;
+
+  if (md.thermo && md.pot === 'double') {
+    const c = md.cross, elapsed = s.t - c.t0, rate = elapsed > 0 ? c.count / elapsed : 0, boltz = Math.exp(-md.h / md.T);
+    $('c-count').textContent = c.count;
+    $('c-time').textContent = elapsed.toFixed(1);
+    $('c-rate').textContent = c.count > 0 ? fsci(rate) : '—';
+    $('c-h').textContent = md.h.toFixed(1); $('c-T').textContent = md.T.toFixed(2);
+    $('c-exp').textContent = fsci(boltz);
+    const rare = boltz < 1e-3;
+    $('c-rare').hidden = !rare;
+    if (rare) $('c-wait').textContent = Math.round(1 / boltz).toLocaleString('en-US');
+  }
+}
+
+/* =====================================================================
+   SCREEN 2 · METADYNAMICS
+   ===================================================================== */
+const mt = makeMeta();
+mt.playing = false; mt.speed = 5; mt.showHills = false; mt.acc = 0;
+mt.yTop = 1.6 * mt.h; mt.yBot = 1.5 * mt.h;
+mt.flashes = []; mt.seenHills = 0;   // recently landed hills, for the brief highlight
+
+function mtSetPlaying(on) {
+  mt.playing = on; mt.acc = 0;
+  $('mt-play').innerHTML = on ? '&#10074;&#10074; Pause' : '&#9654; Play';
+}
+function mtRestart() {
+  resetMeta(mt);
+  mt.flashes = []; mt.seenHills = 0;
+  mt.yTop = 1.6 * mt.h; mt.yBot = 1.5 * mt.h;
+}
+function mtRun(n, now) {
+  for (let i = 0; i < n; i++) metaStep(mt);
+  while (mt.seenHills < mt.hills.length) mt.flashes.push({ hill: mt.hills[mt.seenHills++], t0: now });
+  if (mt.flashes.length > 12) mt.flashes.splice(0, mt.flashes.length - 12);   // keep only the newest few
+}
+
+bindSlider('mt-speed', { min: 1, max: 100, step: 1, value: 5, fmt: v => v + ' steps/frame', onInput: v => { mt.speed = v; } });
+bindSlider('mt-w', { min: 0.02, max: 0.5, step: 0.01, value: 0.1, fmt: v => v.toFixed(2), onInput: v => { mt.w = v; } });
+bindSlider('mt-sigma', { min: 0.05, max: 0.3, step: 0.01, value: 0.12, fmt: v => v.toFixed(2), onInput: v => { mt.sigma = v; } });
+bindSlider('mt-N', { min: 10, max: 200, step: 10, value: 50, fmt: v => v + ' steps', onInput: v => { mt.N = v; } });
+bindSlider('mt-T', { min: 0.1, max: 2, step: 0.05, value: 0.5, fmt: v => v.toFixed(2), onInput: v => { mt.T = v; } });
+bindSlider('mt-h', { min: 1, max: 10, step: 0.5, value: 5, fmt: v => v.toFixed(1), onInput: v => { mt.h = v; mtRestart(); } });
+bindSlider('mt-B', { min: 2, max: 20, step: 1, value: 10, fmt: v => v.toFixed(0), onInput: v => { mt.B = v; } });
+bindSwitch('mt-showhills', false, v => { mt.showHills = v; });
+bindSwitch('mt-wt', false, v => { mt.wt = v; $('mt-B').hidden = !v; $('mt-wtnote').hidden = !v; mtRestart(); });
+
+$('mt-play').addEventListener('click', () => mtSetPlaying(!mt.playing));
+$('mt-step').addEventListener('click', () => { mtSetPlaying(false); mtRun(1, performance.now()); });
+$('mt-reset').addEventListener('click', () => { mtRestart(); mtSetPlaying(false); });
+
+/* ---------- Screen 2 drawing ---------- */
+const Udw = x => energy(POTENTIALS.double, mt.h, x);
+
+// One Gaussian hill drawn as a bump sitting at the surface height where it landed.
+function hillPath(ctx, m, hill) {
+  const n = 24, span = 3 * hill.sigma;
+  ctx.beginPath();
+  for (let j = 0; j <= n; j++) {
+    const x = hill.x - span + 2 * span * j / n, d = x - hill.x;
+    const y = hill.base + hill.w * Math.exp(-d * d / (2 * hill.sigma * hill.sigma));
+    if (j === 0) ctx.moveTo(m.px(x), m.py(y)); else ctx.lineTo(m.px(x), m.py(y));
+  }
+}
+
+function drawMTTop(now) {
+  const { ctx, W, H } = fitCanvas($('mt-top'));
+  const fs = fontSize(W), g = mt.grid, s = mt.s, page = { L: 0, R: W };
+  // Auto-scale the vertical axis as the sand piles up (smoothly).
+  let top = 0;
+  for (let i = 0; i < g.n; i++) if (Math.abs(g.x[i]) <= 1.3) top = Math.max(top, Udw(g.x[i]) + g.V[i]);
+  mt.yTop += (Math.max(1.6 * mt.h, 1.15 * top) - mt.yTop) * 0.15;
+  const m = makeMap(W, H, XMIN, XMAX, -0.08 * mt.yTop, mt.yTop, plotPad(fs));
+  ctx.clearRect(0, 0, W, H);
+  ctx.font = fontOf(fs);
+  drawXAxis(ctx, m, fs);
+  ctx.save(); clipPlot(ctx, m);
+
+  // The bias as sand stacked on top of U: fill between U and U + V.
+  ctx.beginPath();
+  for (let i = 0; i < g.n; i++) { const p = m.px(g.x[i]), q = m.py(Udw(g.x[i]) + g.V[i]); if (i === 0) ctx.moveTo(p, q); else ctx.lineTo(p, q); }
+  for (let i = g.n - 1; i >= 0; i--) ctx.lineTo(m.px(g.x[i]), m.py(Udw(g.x[i])));
+  ctx.closePath();
+  ctx.fillStyle = theme.sand; ctx.globalAlpha = 0.6; ctx.fill(); ctx.globalAlpha = 1;
+  ctx.strokeStyle = theme.bias; ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (let i = 0; i < g.n; i++) { const p = m.px(g.x[i]), q = m.py(Udw(g.x[i]) + g.V[i]); if (i === 0) ctx.moveTo(p, q); else ctx.lineTo(p, q); }
+  ctx.stroke();
+
+  // Individual Gaussians (the most recent 400 at most, to stay fast).
+  if (mt.showHills) {
+    ctx.strokeStyle = theme.bias; ctx.lineWidth = 1; ctx.globalAlpha = 0.5;
+    for (let k = Math.max(0, mt.hills.length - 400); k < mt.hills.length; k++) { hillPath(ctx, m, mt.hills[k]); ctx.stroke(); }
+    ctx.globalAlpha = 1;
+  }
+
+  // Briefly highlight each hill as it lands: the bump lights up and a marker fades.
+  mt.flashes = mt.flashes.filter(f => now - f.t0 < 700);
+  for (const f of mt.flashes) {
+    const age = (now - f.t0) / 700, hill = f.hill;
+    ctx.globalAlpha = 1 - age;
+    hillPath(ctx, m, hill);
+    ctx.lineTo(m.px(hill.x + 3 * hill.sigma), m.py(hill.base)); ctx.lineTo(m.px(hill.x - 3 * hill.sigma), m.py(hill.base)); ctx.closePath();
+    ctx.fillStyle = theme.force; ctx.fill();
+    const px = m.px(hill.x), py = m.py(hill.base + hill.w) - 0.5 * fs - age * 1.2 * fs;
+    ctx.fillStyle = theme.force;
+    ctx.beginPath(); ctx.arc(px, py, 0.22 * fs, 0, 2 * Math.PI); ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+
+  // The true curve U(x) and the ball sitting on U + V.
+  ctx.strokeStyle = theme.curve; ctx.lineWidth = 2.5; ctx.lineJoin = 'round';
+  tracePath(ctx, m, Udw, XMIN, XMAX, 360); ctx.stroke();
+  ctx.restore();
+  drawBall(ctx, m.px(s.x), m.py(Udw(s.x) + gridAt(g, g.V, s.x)), 0.6 * fs);
+
+  drawLabel(ctx, 'U(x) + V(x): the well plus the sand', m.L, m.T - 1.2 * fs, theme.text, 'left', page);
+  drawLabel(ctx, 'T = ' + mt.T.toFixed(2), m.R, m.T - 1.2 * fs, theme.muted, 'right', page);
+}
+
+function drawMTBottom() {
+  const { ctx, W, H } = fitCanvas($('mt-bottom'));
+  const fs = fontSize(W), g = mt.grid, page = { L: 0, R: W };
+  const { est, barrier } = metaEstimate(mt);
+  let top = 0;
+  for (let i = 0; i < g.n; i++) if (Math.abs(g.x[i]) <= 1.2) top = Math.max(top, est[i]);
+  mt.yBot += (Math.max(1.5 * mt.h, 1.1 * top) - mt.yBot) * 0.15;
+  const m = makeMap(W, H, XMIN, XMAX, -0.06 * mt.yBot, mt.yBot, plotPad(fs));
+  ctx.clearRect(0, 0, W, H);
+  ctx.font = fontOf(fs);
+  drawXAxis(ctx, m, fs);
+  ctx.save(); clipPlot(ctx, m);
+  ctx.strokeStyle = theme.curve; ctx.lineWidth = 2; ctx.setLineDash([6, 5]);
+  tracePath(ctx, m, x => POTENTIALS.double.U(x, mt.h), XMIN, XMAX, 240); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.strokeStyle = theme.bias; ctx.lineWidth = 3; ctx.lineJoin = 'round';
+  ctx.beginPath();
+  for (let i = 0; i < g.n; i++) { const p = m.px(g.x[i]), q = m.py(est[i]); if (i === 0) ctx.moveTo(p, q); else ctx.lineTo(p, q); }
+  ctx.stroke();
+  ctx.restore();
+
+  const crossed = mt.cross.count > 0, estText = crossed ? fnum(barrier, 2) : '—';
+  drawLabel(ctx, (mt.wt ? 'estimate −(B/(B−1))·V(x): ' : 'estimate −V(x): ') + estText, m.L, m.T - 1.2 * fs, theme.bias, 'left', page);
+  drawLabel(ctx, 'true U(x): ' + fnum(mt.h, 2), m.R, m.T - 1.2 * fs, theme.text, 'right', page);
+
+  $('mt-nhills').textContent = mt.hills.length;
+  $('mt-cross').textContent = mt.cross.count;
+  $('mt-est').textContent = estText;
+  $('mt-true').textContent = fnum(mt.h, 2);
+}
+
+/* =====================================================================
+   TABS AND THE ANIMATION LOOP
+   ===================================================================== */
+let active = 'md';
+const tabs = Array.from(document.querySelectorAll('.tab'));
+function showScreen(name) {
+  active = name;
+  for (const tab of tabs) {
+    const on = tab.dataset.screen === name;
+    tab.setAttribute('aria-selected', on ? 'true' : 'false');
+    tab.tabIndex = on ? 0 : -1;
+    $('screen-' + tab.dataset.screen).classList.toggle('active', on);
+  }
+}
+tabs.forEach((tab, i) => {
+  tab.addEventListener('click', () => showScreen(tab.dataset.screen));
+  tab.addEventListener('keydown', e => {
+    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+    const j = (i + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length;
+    tabs[j].focus(); showScreen(tabs[j].dataset.screen); e.preventDefault();
+  });
+});
+
+mdUpdateVisibility();
+
+// The physics runs "speed" steps per 1/60 s of wall-clock time, however fast
+// the display refreshes, with a cap so a slow frame cannot snowball.
+const MAX_STEPS_PER_FRAME = 600;
+let lastFrame = performance.now();
+function frame(now) {
+  const elapsed = Math.min(100, now - lastFrame);
+  lastFrame = now;
+  if (active === 'md') {
+    if (md.playing && !md.dragging) {
+      md.acc += md.speed * elapsed * 60 / 1000;
+      const n = Math.min(MAX_STEPS_PER_FRAME, Math.floor(md.acc));
+      md.acc -= n;
+      mdRun(n);
+    }
+    drawMDMain();
+    drawMDEnergy();
+    mdUpdateNumbers();
+  } else {
+    if (mt.playing) {
+      mt.acc += mt.speed * elapsed * 60 / 1000;
+      const n = Math.min(MAX_STEPS_PER_FRAME, Math.floor(mt.acc));
+      mt.acc -= n;
+      mtRun(n, now);
+    }
+    drawMTTop(now);
+    drawMTBottom();
+  }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
